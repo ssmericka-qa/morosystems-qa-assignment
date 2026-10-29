@@ -16,7 +16,7 @@
     "api:spec:refresh": "curl -sf http://localhost:8080/v3/api-docs -o openapi/todo-api.json && npm run api:codegen",
     "perf": "k6 run perf/tasks-load.k6.js",
     "typecheck": "tsc --noEmit",
-    "report:allure": "allure generate allure-results --clean --name \"MoroSystems QA assignment\" --open"
+    "report:allure": "allure generate allure-results --clean --open"
   },
   "devDependencies": {
     "@playwright/test": "1.58.2",

@@ -211,7 +211,12 @@ jobs:
 
       - name: Generate Allure report
         if: ${{ hashFiles('allure-results/*.json') != '' }}
-        run: npx allure generate allure-results --name "MoroSystems QA assignment" --output allure-report
+        # Allure 3 embeds Google Analytics in the report and offers no switch for it –
+        # the public report must not track its visitors, so the snippet is removed.
+        run: |
+          npx allure generate allure-results
+          perl -0pi -e 's#\s*<script async src="https://www\.googletagmanager\.com/[^"]*"></script>\s*<script>\s*window\.dataLayer.*?</script>##s' allure-report/index.html
+          ! grep -q googletagmanager allure-report/index.html
 
       - name: Write summary and Teams message
         env:
