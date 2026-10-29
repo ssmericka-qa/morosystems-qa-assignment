@@ -18,9 +18,11 @@ type Fixtures = {
 export const test = base.extend<Fixtures>({
   page: async ({ page }, use) => {
     // morosystems.cz shows a CookieScript consent dialog with a delay or after interaction.
-    // Whenever it covers the page, dismiss it (reject = no tracking cookies) and continue.
+    // Whenever it covers the page, reject it (no tracking cookies) and continue. Accept is only
+    // a fallback for a dialog variant without the reject button.
     await page.addLocatorHandler(page.locator('#cookiescript_injected'), async (dialog) => {
-      await dialog.locator('#cookiescript_reject, #cookiescript_accept').first().click();
+      const reject = dialog.locator('#cookiescript_reject');
+      await (await reject.isVisible() ? reject : dialog.locator('#cookiescript_accept')).click();
     });
     await use(page);
   },

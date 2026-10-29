@@ -14,6 +14,7 @@ test.describe('Todo API – task lifecycle', () => {
     expect(Array.isArray(tasks)).toBe(true);
     // Only our own task is checked – the db is shared with tests running in parallel.
     const ours = tasks.find((t) => t.id === task.id);
+    expect(ours, 'the task created for this test is in the list').toBeDefined();
     expectTaskShape(ours);
     expect(ours).toEqual(task);
   });

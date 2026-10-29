@@ -6,7 +6,7 @@
 | --- | --- |
 | Assignment GUI scenario (Google → MoroSystems → Kariéra → filter) | Google search itself (third party) |
 | Kariéra city filter, responsive layout, visual stability | Content correctness of job descriptions |
-| Todo API: CRUD, status changes, validation, error handling, performance | Security testing of the backend (would be next, see below) |
+| Todo API: CRUD, status changes, validation, error handling, basic security checks (malformed input, server-owned fields), performance | Full security testing of the backend (would be next, see below) |
 
 ## Approach
 

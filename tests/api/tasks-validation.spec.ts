@@ -35,7 +35,7 @@ test.describe('Todo API – validation and error handling', () => {
     }
   });
 
-  test('unknown id returns 404 for update, delete, complete and incomplete (FINDINGS B2)', async ({ api }) => {
+  test('KNOWN BUG B2: unknown id returns 404 for update, delete, complete and incomplete – Swagger documents 400', async ({ api }) => {
     test.info().annotations.push({
       type: 'finding',
       description:
@@ -77,8 +77,9 @@ test.describe('Todo API – validation and error handling', () => {
     }
 
     // An update changes the text only – the status cannot be switched through it.
-    const updated = await (await api.updateTaskRaw(task.id, { text: uniqueText('tamper'), completed: true })).json();
-    expect(updated.completed).toBe(false);
+    const updateResponse = await api.updateTaskRaw(task.id, { text: uniqueText('tamper'), completed: true });
+    expect(updateResponse.status()).toBe(200);
+    expect((await updateResponse.json()).completed).toBe(false);
     expect((await api.findTask(task.id))?.completed).toBe(false);
   });
 
@@ -89,8 +90,12 @@ test.describe('Todo API – validation and error handling', () => {
     });
     const body = { text: uniqueText('retry') };
 
-    const first = await (await api.createTask(body)).json();
-    const second = await (await api.createTask(body)).json();
+    const firstResponse = await api.createTask(body);
+    const secondResponse = await api.createTask(body);
+    expect(firstResponse.status()).toBe(200);
+    expect(secondResponse.status()).toBe(200);
+    const first = await firstResponse.json();
+    const second = await secondResponse.json();
     try {
       expect(second.id).not.toBe(first.id);
       expect(await api.findTask(first.id)).toBeDefined();

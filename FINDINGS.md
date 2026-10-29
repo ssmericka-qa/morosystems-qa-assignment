@@ -11,7 +11,7 @@ consumer point of view.
 | **UX issue** – works, but the user experience should be improved | 1 | W1 |
 | **Observation** – not a defect; intentional behaviour, risk or note for the team | 6 | B5, B6, B7, B8, W2, W3 |
 
-B2–B4, B8 and B9 are covered by API tests (`tests/api/tasks-validation.spec.ts`), B6 and B7 by
+B1 is covered by `tests/api/tasks-crud.spec.ts`, B2–B4, B8 and B9 by `tests/api/tasks-validation.spec.ts`, B6 and B7 by
 the k6 load test.
 All findings were reproduced against the running backend or the live website, except B5, which
 comes from a code review of the backend source done as the last step (behaviour first, code second).
@@ -21,7 +21,7 @@ comes from a code review of the backend source done as the last step (behaviour 
 | # | Type | Finding | Severity | Evidence |
 | --- | --- | --- | --- | --- |
 | B1 | Defect (requirement mismatch) | **No PUT endpoint.** The requirement (assignment step 4) is to update a task with `PUT`; the API updates via `POST /tasks/{id}` and `PUT` returns `404 Cannot PUT` (CORS also allows only `GET, POST, DELETE`). The backend's own Swagger documents the POST, so code and API docs agree with each other but not with the requirement – a client built from the requirement cannot update tasks. Fix either the API (add PUT) or the requirement; the decision belongs to the product owner. | Medium | `tasks-crud.spec.ts` → "step 4: PUT …" |
-| B2 | Defect (docs) | **Swagger vs. implementation – unknown id.** Swagger documents `400` for an unknown task id on delete, complete and incomplete, and no not-found response on update; the backend returns `404` for all four. `404` is the better choice – the documentation should be fixed. | Low | `tasks-validation.spec.ts` → "unknown id returns 404 …" |
+| B2 | Defect (docs) | **Swagger vs. implementation – unknown id.** Swagger documents `400` for an unknown task id on delete, complete and incomplete, and no not-found response on update; the backend returns `404` for all four. `404` is the better choice – the documentation should be fixed. | Low | `tasks-validation.spec.ts` → "KNOWN BUG B2 …" |
 | B3 | Defect | **Whitespace-only text is accepted.** `{"text":"   "}` creates a task; validation only checks truthiness. | Medium | `tasks-validation.spec.ts` → "KNOWN BUG … B3" |
 | B4 | Defect | **No type validation.** `{"text": 12345}` is stored as a task text (number instead of string). | Medium | `tasks-validation.spec.ts` → "KNOWN BUG … B4" |
 | B5 | Observation (code review) | **Ineffective sort.** `tasks.sort((item) => item.createdDate)` uses a one-argument comparator, so it does not sort by creation date. No impact was observed because tasks are appended in creation order; note that `sort` also mutates the stored data. | Info | `todo-be/src/controller.ts` – not verified by a test, the API defines no ordering |
@@ -34,7 +34,7 @@ comes from a code review of the backend source done as the last step (behaviour 
 
 | # | Type | Finding | Severity | Evidence |
 | --- | --- | --- | --- | --- |
-| W1 | UX issue | **No empty state for cities without openings.** "Bratislava" is offered in the city filter but had no open positions when tested (29 Oct 2026); the list just disappears without a message such as "Pro toto město teď nemáme otevřenou pozici". | Low | `career-filter.spec.ts` → annotation on the Bratislava test |
+| W1 | UX issue | **No empty state for cities without openings.** "Bratislava" and "home office" are offered in the city filter but had no open positions when tested (29 Oct 2026); the list just disappears without a message such as "Pro toto město teď nemáme otevřenou pozici". | Low | `career-filter.spec.ts` → annotation on the Bratislava and home office tests |
 | W2 | Observation | **Consent dialog appears late / after interaction** and can cover the mobile menu – a user who taps quickly can hit the overlay instead of the menu link. | Info | handled in `src/fixtures.ts`; seen on Pixel 7 |
 | W3 | Observation | **Slow `load` event.** Navigation occasionally exceeded 60 s waiting for `load` (third-party resources) although the content was usable much earlier. | Info | reason for `gotoDom` in `src/pages/navigation.ts` |
 

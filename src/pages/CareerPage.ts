@@ -1,8 +1,8 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import { gotoDom } from './navigation';
 
-/** Cities offered by the "Všechna města" select box. */
-export type City = 'Brno' | 'Praha' | 'Hradec Králové' | 'Bratislava';
+/** Locations offered by the "Všechna města" select box (cities and remote work). */
+export type City = 'Brno' | 'Praha' | 'Hradec Králové' | 'Bratislava' | 'home office';
 
 export class CareerPage {
   readonly heading: Locator;

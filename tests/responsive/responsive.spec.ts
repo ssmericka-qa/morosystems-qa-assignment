@@ -30,6 +30,8 @@ test.describe('Responsive layout', () => {
     await expectNoHorizontalOverflow(page);
 
     const expectedCount = await career.expectedCountFor('Brno');
+    // Without positions the layout checks below would pass on an empty list.
+    expect(expectedCount, 'Brno has open positions to check the layout on').toBeGreaterThan(0);
     await career.filterByCity('Brno');
     await expect(career.visiblePositions).toHaveCount(expectedCount);
 

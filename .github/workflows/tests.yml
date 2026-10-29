@@ -53,6 +53,10 @@ jobs:
           npm ci --prefix todo-be
           npm ci
 
+      # Playwright only strips types when it runs tests – the type check is a separate step.
+      - name: Type check
+        run: npm run typecheck
+
       # Playwright starts the backend itself (webServer in playwright.config.ts).
       - name: Run API tests
         run: npx playwright test --project=api

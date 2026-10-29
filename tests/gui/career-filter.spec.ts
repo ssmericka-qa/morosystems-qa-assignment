@@ -1,7 +1,7 @@
 import type { City } from '../../src/pages/CareerPage';
 import { expect, test } from '../../src/fixtures';
 
-const CITIES: City[] = ['Brno', 'Praha', 'Hradec Králové', 'Bratislava'];
+const CITIES: City[] = ['Brno', 'Praha', 'Hradec Králové', 'Bratislava', 'home office'];
 
 /**
  * The city filter is checked against the location printed on each card: for every city the

@@ -4,9 +4,14 @@
 // Run: npm run perf   (backend must be running on API_URL, default http://localhost:8080)
 import http from 'k6/http';
 import { check, group, sleep } from 'k6';
+import { Counter } from 'k6/metrics';
 
 const API_URL = __ENV.API_URL || 'http://localhost:8080';
 const JSON_HEADERS = { headers: { 'Content-Type': 'application/json' } };
+
+// Data errors get their own metric and a zero-tolerance threshold: in the overall `checks` rate a
+// single lost task would disappear among ~1,400 passing checks.
+const dataErrors = new Counter('data_errors');
 
 export const options = {
   scenarios: {
@@ -36,6 +41,7 @@ export const options = {
     'http_req_duration{endpoint:delete}': ['p(95)<200'],
     'http_req_duration{endpoint:list}': ['p(95)<3500'],
     checks: ['rate>0.99'],
+    data_errors: ['count==0'],
   },
 };
 
@@ -65,10 +71,11 @@ export function taskLifecycle({ prefix }) {
       { ...JSON_HEADERS, tags: { endpoint: 'update', name: 'POST /tasks/{id}' } },
     );
     // Under load the data must stay correct, not only fast.
-    check(updated, {
-      'update: status 200': (r) => r.status === 200,
+    check(updated, { 'update: status 200': (r) => r.status === 200 });
+    const dataOk = check(updated, {
       'update: the same task with the new text': (r) => r.json('id') === id && r.json('text') === newText,
     });
+    dataErrors.add(dataOk ? 0 : 1);
 
     // `name` groups the per-id URLs into one metric instead of one per task.
     const deleted = http.del(`${API_URL}/tasks/${id}`, null, { tags: { endpoint: 'delete', name: 'DELETE /tasks/{id}' } });
@@ -90,4 +97,5 @@ export function teardown({ prefix }) {
   const res = http.get(`${API_URL}/tasks`, { tags: { endpoint: 'reconcile' }, timeout: '15s' });
   const leftovers = (res.json() ?? []).filter((task) => String(task.text).startsWith(prefix));
   check(leftovers, { 'reconcile: no task of this run left behind': (l) => l.length === 0 });
+  dataErrors.add(leftovers.length);
 }
