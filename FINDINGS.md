@@ -7,11 +7,12 @@ consumer point of view.
 
 | Type | Count | Items |
 | --- | --- | --- |
-| **Defect** – the system behaves incorrectly or its documentation is wrong | 4 | B2, B3, B4, B7 |
+| **Defect** – the system behaves incorrectly or its documentation is wrong | 4 | B2, B3, B4, B9 |
 | **UX issue** – works, but the user experience should be improved | 1 | W1 |
-| **Observation** – not a defect; intentional behaviour, spec mismatch or note for the team | 5 | B1, B5, B6, W2, W3 |
+| **Observation** – not a defect; intentional behaviour, spec mismatch, risk or note for the team | 7 | B1, B5, B6, B7, B8, W2, W3 |
 
-B2–B4 are covered by API tests (`tests/api/tasks-validation.spec.ts`), B7 by the k6 load test.
+B2–B4, B8 and B9 are covered by API tests (`tests/api/tasks-validation.spec.ts`), B6 and B7 by
+the k6 load test.
 All findings were reproduced against the running backend or the live website, except B5, which
 comes from a code review of the backend source done as the last step (behaviour first, code second).
 
@@ -25,7 +26,9 @@ comes from a code review of the backend source done as the last step (behaviour 
 | B4 | Defect | **No type validation.** `{"text": 12345}` is stored as a task text (number instead of string). | Medium | `tasks-validation.spec.ts` → "KNOWN BUG … B4" |
 | B5 | Observation (code review) | **Ineffective sort.** `tasks.sort((item) => item.createdDate)` uses a one-argument comparator, so it does not sort by creation date. No impact was observed because tasks are appended in creation order; note that `sort` also mutates the stored data. | Info | `todo-be/src/controller.ts` – not verified by a test, the API defines no ordering |
 | B6 | Observation | **GET /tasks is deliberately slow (~3 s)** – documented in Swagger, measured at 3.0 s median. | Info | k6 (`npm run perf`) |
-| B7 | Defect (performance) | **Latency under concurrent writes.** With 10 virtual users writing (think time 1 s), most `GET /tasks` calls take 3.0 s, but in each of 4 local runs one call took ~5.7 s (p95 5.7 s). In one stress run without think time, single write requests took up to **1 min 51 s**. Likely cause: synchronous file I/O (`lowdb` JSONFileSync on every write) blocking the Node.js event loop. Measured on a local machine – the numbers show the trend, not a benchmark. | Medium (scalability) | `npm run perf`, `k6 run -e THINK_TIME=0 perf/tasks-load.k6.js` |
+| B7 | Observation (performance risk) | **Latency under concurrent writes.** On a local machine, with 10 virtual users writing, one `GET /tasks` call per run took ~5.7 s instead of 3 s (4 runs); in a stress run without think time single write requests took up to **1 min 51 s**. Likely cause: synchronous file I/O (`lowdb` JSONFileSync on every write) blocking the Node.js event loop. On the faster CI runner the regular load stays within the thresholds (list p95 ≈ 3.0 s) and the list scenario has only ~20 samples – so this is a scalability risk confirmed under stress, not a defect at the tested load. | Info (risk) | `k6 run -e THINK_TIME=0 perf/tasks-load.k6.js` |
+| B8 | Observation | **No idempotency.** Sending the same `POST /tasks` twice (e.g. a client retry after a timeout) creates two tasks. Acceptable for a todo app, but in a payment API the same behaviour would mean a double charge – there it needs an idempotency key. | Info | `tasks-validation.spec.ts` → "a repeated identical POST …" |
+| B9 | Defect (security) | **Stack trace in the error response.** A malformed JSON body is correctly rejected with `400`, but the response is an HTML page with the full stack trace, including server file paths and library names (`body-parser`). Information disclosure; Express shows it when `NODE_ENV` is not `production`, which is how the backend is started. | Low (Medium in production) | `tasks-validation.spec.ts` → "KNOWN BUG … B9" |
 
 ## morosystems.cz – Kariéra
 

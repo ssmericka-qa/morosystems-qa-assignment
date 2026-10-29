@@ -10,9 +10,16 @@ import { expect, test } from '../../src/fixtures';
 
 const HIDE_OVERLAYS = fileURLToPath(new URL('./hide-overlays.css', import.meta.url));
 
-/** Waits for fonts and images inside the compared block. */
+/**
+ * Waits for fonts and images inside the compared block. `document.fonts.ready` alone is not
+ * enough: it resolves before a web font has even started to load, and the screenshot then shows
+ * the fallback font (seen in CI) – so every font face of the page is loaded explicitly.
+ */
 async function settle(page: Page): Promise<void> {
-  await page.evaluate(() => document.fonts.ready);
+  await page.evaluate(async () => {
+    await Promise.all([...document.fonts].map((font) => font.load().catch(() => undefined)));
+    await document.fonts.ready;
+  });
   await page.waitForFunction(() =>
     [...document.querySelectorAll<HTMLImageElement>('.b-intro img')].every((img) => img.complete),
   );

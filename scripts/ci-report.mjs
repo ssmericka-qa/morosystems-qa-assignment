@@ -1,13 +1,16 @@
-// Turns the merged Playwright JSON report into a GitHub job summary and a Microsoft Teams
-// message (Adaptive Card). Used by the "report" job in .github/workflows/tests.yml.
+// Turns the merged Playwright JSON report, the job results and the k6 exit code into a GitHub
+// job summary and a Microsoft Teams message (Adaptive Card). Used by the "report" job in
+// .github/workflows/tests.yml.
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 const {
   RESULTS_JSON = 'results.json',
   TEAMS_CARD = 'teams-card.json',
-  REPORT_URL = '',
+  SITE_DIR = 'site',
+  SITE_URL = '',
   RUN_URL = '',
-  PERF_OUTCOME = '',
+  JOB_RESULTS = '{}',
+  K6_EXIT = '',
   GITHUB_STEP_SUMMARY,
   GITHUB_REPOSITORY = 'local',
   GITHUB_REF_NAME = 'local',
@@ -17,6 +20,7 @@ const {
 const STATUS = { expected: 'passed', unexpected: 'failed', flaky: 'flaky', skipped: 'skipped' };
 const projects = new Map();
 const failures = [];
+const skipped = [];
 
 function collect(suite, path) {
   for (const spec of suite.specs ?? []) {
@@ -24,7 +28,12 @@ function collect(suite, path) {
       const counts = projects.get(test.projectName) ?? { passed: 0, failed: 0, flaky: 0, skipped: 0 };
       counts[STATUS[test.status]]++;
       projects.set(test.projectName, counts);
-      if (test.status === 'unexpected') failures.push(`${test.projectName} › ${[...path, spec.title].join(' › ')}`);
+      const title = `${test.projectName} › ${[...path, spec.title].join(' › ')}`;
+      if (test.status === 'unexpected') failures.push(title);
+      if (test.status === 'skipped') {
+        const reason = test.annotations?.find((a) => a.type === 'skip')?.description;
+        skipped.push(reason ? `${title} – ${reason}` : title);
+      }
     }
   }
   for (const child of suite.suites ?? []) collect(child, [...path, child.title]);
@@ -38,15 +47,34 @@ if (existsSync(RESULTS_JSON)) {
 const total = { passed: 0, failed: 0, flaky: 0, skipped: 0 };
 for (const counts of projects.values()) for (const key in total) total[key] += counts[key];
 
-const PERF = {
-  success: '✅ thresholds met',
-  failure: '⚠️ thresholds exceeded – informative only, see FINDINGS.md (B7)',
-};
-const perf = PERF[PERF_OUTCOME] ?? '– not run';
-const ok = total.failed === 0;
-const headline = projects.size
+// A job that crashed before uploading its results (browser install, timeout, lost runner) has no
+// tests in the report – without this check the summary would look green. Projects of a failed
+// job that are missing from the results are therefore reported explicitly.
+const PROJECTS_BY_JOB = { api: ['api'], gui: ['chromium', 'firefox', 'webkit', 'mobile', 'tablet', 'visual'] };
+const brokenJobs = Object.entries(JSON.parse(JOB_RESULTS))
+  .filter(([name, job]) => PROJECTS_BY_JOB[name] && ['failure', 'cancelled'].includes(job.result))
+  .flatMap(([name, job]) =>
+    PROJECTS_BY_JOB[name].filter((project) => !projects.has(project)).map((project) => `${project} (${job.result})`),
+  );
+
+// k6 exits with 99 when a threshold is breached; any other non-zero code means it could not run.
+const K6 = { '0': '✅ thresholds met', '99': '⚠️ thresholds exceeded – informative only' };
+const perf = K6_EXIT === '' ? '– not run' : (K6[K6_EXIT] ?? `❌ k6 could not run (exit code ${K6_EXIT})`);
+
+const ok = total.failed === 0 && brokenJobs.length === 0;
+const headline = projects.size || brokenJobs.length
   ? `${ok ? '✅' : '❌'} Playwright: ${total.passed} passed, ${total.failed} failed, ${total.flaky} flaky, ${total.skipped} skipped`
   : 'Playwright: not run';
+
+// Links only to reports this run actually published.
+const REPORTS = [
+  ['Playwright report', 'playwright'],
+  ['Allure report', 'allure'],
+  ['k6 report', 'k6'],
+];
+const links = SITE_URL
+  ? REPORTS.filter(([, dir]) => existsSync(`${SITE_DIR}/${dir}`)).map(([title, dir]) => ({ title, url: `${SITE_URL}${dir}/` }))
+  : [];
 
 // GitHub job summary (Markdown on the run page)
 const summary = [
@@ -58,17 +86,24 @@ const summary = [
   '',
   `**k6 load test:** ${perf}`,
   '',
-  REPORT_URL
-    ? `📊 [Playwright report](${REPORT_URL}playwright/) · [Allure report](${REPORT_URL}allure/) · [k6 report](${REPORT_URL}k6/)`
+  links.length
+    ? `📊 ${links.map(({ title, url }) => `[${title}](${url})`).join(' · ')}`
     : '📊 Reports: artifact `playwright-report` below (Playwright and Allure)',
+  ...(brokenJobs.length ? ['', '### Projects without results (their job failed before reporting)', ...brokenJobs.map((j) => `- ${j}`)] : []),
   ...(failures.length ? ['', '### Failed tests', ...failures.map((f) => `- ${f}`)] : []),
+  ...(skipped.length ? ['', '### Skipped tests', ...skipped.map((s) => `- ${s}`)] : []),
 ].join('\n');
 
 if (GITHUB_STEP_SUMMARY) appendFileSync(GITHUB_STEP_SUMMARY, `${summary}\n`);
 else console.log(summary);
 
 // Teams message – the Adaptive Card format accepted by Teams incoming webhooks and Workflows
-const MAX_FAILURES = 10;
+const MAX_ITEMS = 10;
+const list = (items) =>
+  items.slice(0, MAX_ITEMS).map((i) => `- ${i}`).join('\n') +
+  (items.length > MAX_ITEMS ? `\n- … and ${items.length - MAX_ITEMS} more` : '');
+const problems = [...brokenJobs.map((j) => `no results: ${j}`), ...failures];
+
 const card = {
   type: 'AdaptiveCard',
   $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
@@ -86,26 +121,15 @@ const card = {
         { title: 'k6', value: perf },
       ],
     },
-    ...(failures.length
+    ...(problems.length
       ? [
-          { type: 'TextBlock', weight: 'Bolder', text: 'Failed tests', spacing: 'Medium' },
-          {
-            type: 'TextBlock',
-            wrap: true,
-            text: failures.slice(0, MAX_FAILURES).map((f) => `- ${f}`).join('\n') +
-              (failures.length > MAX_FAILURES ? `\n- … and ${failures.length - MAX_FAILURES} more` : ''),
-          },
+          { type: 'TextBlock', weight: 'Bolder', text: 'Failed', spacing: 'Medium' },
+          { type: 'TextBlock', wrap: true, text: list(problems) },
         ]
       : []),
   ],
   actions: [
-    ...(REPORT_URL
-      ? [
-          { type: 'Action.OpenUrl', title: 'Playwright report', url: `${REPORT_URL}playwright/` },
-          { type: 'Action.OpenUrl', title: 'Allure report', url: `${REPORT_URL}allure/` },
-          { type: 'Action.OpenUrl', title: 'k6 report', url: `${REPORT_URL}k6/` },
-        ]
-      : []),
+    ...links.map(({ title, url }) => ({ type: 'Action.OpenUrl', title, url })),
     ...(RUN_URL ? [{ type: 'Action.OpenUrl', title: 'Open pipeline run', url: RUN_URL }] : []),
   ],
 };

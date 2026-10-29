@@ -39,11 +39,16 @@ export const options = {
   },
 };
 
-export function taskLifecycle() {
+/** A run id in every task text, so the final check sees only this run's data. */
+export function setup() {
+  return { prefix: `[k6 ${Date.now().toString(36)}]` };
+}
+
+export function taskLifecycle({ prefix }) {
   group('task lifecycle', () => {
     const created = http.post(
       `${API_URL}/tasks`,
-      JSON.stringify({ text: `[k6] ${__VU}-${__ITER}` }),
+      JSON.stringify({ text: `${prefix} ${__VU}-${__ITER}` }),
       { ...JSON_HEADERS, tags: { endpoint: 'create' } },
     );
     const ok = check(created, {
@@ -53,12 +58,17 @@ export function taskLifecycle() {
     if (!ok) return;
     const id = created.json('id');
 
+    const newText = `${prefix} updated ${__VU}-${__ITER}`;
     const updated = http.post(
       `${API_URL}/tasks/${id}`,
-      JSON.stringify({ text: `[k6] updated ${__VU}-${__ITER}` }),
+      JSON.stringify({ text: newText }),
       { ...JSON_HEADERS, tags: { endpoint: 'update', name: 'POST /tasks/{id}' } },
     );
-    check(updated, { 'update: status 200': (r) => r.status === 200 });
+    // Under load the data must stay correct, not only fast.
+    check(updated, {
+      'update: status 200': (r) => r.status === 200,
+      'update: the same task with the new text': (r) => r.json('id') === id && r.json('text') === newText,
+    });
 
     // `name` groups the per-id URLs into one metric instead of one per task.
     const deleted = http.del(`${API_URL}/tasks/${id}`, null, { tags: { endpoint: 'delete', name: 'DELETE /tasks/{id}' } });
@@ -70,4 +80,14 @@ export function taskLifecycle() {
 export function listTasks() {
   const res = http.get(`${API_URL}/tasks`, { tags: { endpoint: 'list' }, timeout: '10s' });
   check(res, { 'list: status 200': (r) => r.status === 200 });
+}
+
+/**
+ * Reconciliation after the load: every task this run created was also deleted, so none of them
+ * may remain – a leftover means a lost update or delete under concurrent writes.
+ */
+export function teardown({ prefix }) {
+  const res = http.get(`${API_URL}/tasks`, { tags: { endpoint: 'reconcile' }, timeout: '15s' });
+  const leftovers = (res.json() ?? []).filter((task) => String(task.text).startsWith(prefix));
+  check(leftovers, { 'reconcile: no task of this run left behind': (l) => l.length === 0 });
 }

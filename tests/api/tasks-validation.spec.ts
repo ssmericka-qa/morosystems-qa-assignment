@@ -54,12 +54,59 @@ test.describe('Todo API – validation and error handling', () => {
     }
   });
 
+  test('server-owned fields cannot be set by the client', async ({ api, task }) => {
+    const before = Date.now();
+
+    const response = await api.createTaskRaw({
+      text: uniqueText('tamper'),
+      id: 'client-chosen-id',
+      completed: true,
+      createdDate: 0,
+      completedDate: 1,
+    });
+
+    expect(response.status()).toBe(200);
+    const created = await response.json();
+    try {
+      expect(created.id).not.toBe('client-chosen-id');
+      expect(created.completed).toBe(false);
+      expect(created).not.toHaveProperty('completedDate');
+      expect(created.createdDate).toBeGreaterThanOrEqual(before - 1_000);
+    } finally {
+      await api.deleteTask(created.id);
+    }
+
+    // An update changes the text only – the status cannot be switched through it.
+    const updated = await (await api.updateTaskRaw(task.id, { text: uniqueText('tamper'), completed: true })).json();
+    expect(updated.completed).toBe(false);
+    expect((await api.findTask(task.id))?.completed).toBe(false);
+  });
+
+  test('a repeated identical POST creates a second task – no idempotency (FINDINGS B8)', async ({ api }) => {
+    test.info().annotations.push({
+      type: 'finding',
+      description: 'B8: a retried POST creates a duplicate; there is no idempotency key.',
+    });
+    const body = { text: uniqueText('retry') };
+
+    const first = await (await api.createTask(body)).json();
+    const second = await (await api.createTask(body)).json();
+    try {
+      expect(second.id).not.toBe(first.id);
+      expect(await api.findTask(first.id)).toBeDefined();
+      expect(await api.findTask(second.id)).toBeDefined();
+    } finally {
+      await api.deleteTask(first.id);
+      await api.deleteTask(second.id);
+    }
+  });
+
   /**
    * Known defects are pinned by characterization tests: they assert today's (wrong) behaviour
    * precisely, so a crash or a 500 still fails them, and once the backend is fixed they fail too –
-   * then the expectation is flipped to the correct 422.
+   * then the expectation is flipped to the correct response.
    */
-  test.describe('KNOWN BUG – accepted invalid input', () => {
+  test.describe('KNOWN BUG – invalid input handling', () => {
     test('B3: whitespace-only text is accepted (should be 422)', async ({ api }) => {
       const response = await api.createTaskRaw({ text: '   ' });
       await deleteIfCreated(api, response);
@@ -72,6 +119,17 @@ test.describe('Todo API – validation and error handling', () => {
       await deleteIfCreated(api, response);
 
       expect(response.status()).toBe(200);
+    });
+
+    test('B9: malformed JSON is rejected with 400, but the response leaks a stack trace', async ({ request }) => {
+      const response = await request.post('/tasks', {
+        headers: { 'Content-Type': 'application/json' },
+        data: '{"text": ',
+      });
+
+      expect(response.status()).toBe(400);
+      // Should be a short error message; today it is an HTML page with server file paths.
+      expect(await response.text()).toMatch(/node_modules\/body-parser/);
     });
   });
 });

@@ -10,15 +10,6 @@ const TODO_BE_DIR = resolve(process.env.TODO_BE_DIR ?? 'todo-be');
 const API_URL = process.env.API_URL ?? 'http://localhost:8080';
 const isCI = !!process.env.CI;
 
-// The backend is needed only by the "api" project – GUI runs must not depend on it.
-const selectedProjects = process.argv.flatMap((arg, i, all) =>
-  arg.startsWith('--project=') ? [arg.slice('--project='.length)] : arg === '--project' ? [all[i + 1] ?? ''] : [],
-);
-const runsApiTests = selectedProjects.length === 0 || selectedProjects.includes('api');
-if (runsApiTests && !existsSync(TODO_BE_DIR)) {
-  console.warn(`Backend not found in ${TODO_BE_DIR} – API tests expect it running on ${API_URL} (see README).`);
-}
-
 export default defineConfig({
   fullyParallel: true,
   forbidOnly: isCI,
@@ -50,8 +41,10 @@ export default defineConfig({
     video: 'retain-on-failure',
   },
 
-  // Start the backend for API tests when its sources are available; reuse it if already running.
-  webServer: runsApiTests && existsSync(TODO_BE_DIR)
+  // Start the backend for API tests when its sources are available (locally ./todo-be, in CI
+  // only the api job checks it out); reuse it if already running. Without it, API tests expect
+  // the backend on API_URL.
+  webServer: existsSync(TODO_BE_DIR)
     ? {
         command: 'npm start',
         cwd: TODO_BE_DIR,

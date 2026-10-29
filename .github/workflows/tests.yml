@@ -16,11 +16,20 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege: jobs only read the repository (the Pages job adds what it needs).
+permissions:
+  contents: read
+
+env:
+  # The backend under test, pinned so an upstream change cannot silently change the results.
+  TODO_BE_REF: 2cfa7c31aba1ee9f1086a3dcff22bae5c132952f
+
 jobs:
   api:
     name: Playwright (api)
     if: ${{ contains(fromJSON('["", "all", "api"]'), inputs.suite || '') }}
-    runs-on: ubuntu-latest
+    # Pinned runner image – visual baselines and fonts must not change with "ubuntu-latest".
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       PLAYWRIGHT_BLOB_OUTPUT_NAME: report-api.zip
@@ -31,6 +40,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: morosystems/todo-be
+          ref: ${{ env.TODO_BE_REF }}
           path: todo-be
 
       - uses: actions/setup-node@v7
@@ -66,7 +76,7 @@ jobs:
   gui:
     name: Playwright (${{ matrix.project }})
     if: ${{ contains(fromJSON('["", "all", "gui"]'), inputs.suite || '') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -115,16 +125,17 @@ jobs:
   performance:
     name: k6 load test
     if: ${{ contains(fromJSON('["", "all", "performance"]'), inputs.suite || '') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
-      outcome: ${{ steps.k6.outcome }}
+      exit-code: ${{ steps.k6.outputs.exit-code }}
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/checkout@v7
         with:
           repository: morosystems/todo-be
+          ref: ${{ env.TODO_BE_REF }}
           path: todo-be
 
       - uses: actions/setup-node@v7
@@ -140,8 +151,9 @@ jobs:
 
       - uses: grafana/setup-k6-action@v1
 
-      # Thresholds are assumed SLOs that report findings (see FINDINGS.md B7) – they must not
-      # block merges, so a breach is reported in the summary instead of failing the pipeline.
+      # Thresholds are assumed SLOs (the assignment gives none) – a breach is reported in the
+      # summary instead of failing the pipeline. k6 exits with 99 on a threshold breach; any
+      # other non-zero code means the test itself could not run and is reported as such.
       - name: Run k6
         id: k6
         continue-on-error: true
@@ -150,17 +162,31 @@ jobs:
           # Built-in k6 web dashboard, exported as a standalone HTML report with charts
           K6_WEB_DASHBOARD: 'true'
           K6_WEB_DASHBOARD_EXPORT: k6-report.html
-        run: k6 run --quiet --no-color --summary-export=k6-summary.json perf/tasks-load.k6.js | tee k6-output.txt
+        run: |
+          set +e
+          k6 run --quiet --no-color --summary-export=k6-summary.json perf/tasks-load.k6.js | tee k6-output.txt
+          code=${PIPESTATUS[0]}
+          echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
 
       - name: Add k6 results to the job summary
         if: ${{ !cancelled() }}
+        env:
+          K6_EXIT: ${{ steps.k6.outputs.exit-code }}
         run: |
-          echo '### k6 load test – ${{ steps.k6.outcome == 'success' && '✅ thresholds met' || '⚠️ thresholds exceeded (FINDINGS.md B7)' }}' >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          cat k6-output.txt >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          case "$K6_EXIT" in
+            0) result='✅ thresholds met' ;;
+            99) result='⚠️ thresholds exceeded' ;;
+            *) result="❌ k6 could not run (exit code ${K6_EXIT:-unknown})" ;;
+          esac
+          {
+            echo "### k6 load test – $result"
+            echo '```'
+            cat k6-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload k6 summary
+      - name: Upload k6 results
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
@@ -170,15 +196,16 @@ jobs:
             k6-output.txt
             k6-report.html
 
-  # Merges the reports of all Playwright jobs, writes the run summary and notifies Teams.
+  # Merges the reports of all jobs, writes the run summary, prepares the GitHub Pages site and
+  # notifies Teams.
   report:
     name: Report
     needs: [api, gui, performance]
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
-      # Optional: the report is published to GitHub Pages only when the repository variable
+      # Optional: the reports are published to GitHub Pages only when the repository variable
       # PUBLISH_REPORT is "true" (Settings → Pages → Source: GitHub Actions must be enabled).
       PUBLISH_REPORT: ${{ vars.PUBLISH_REPORT == 'true' && github.ref == 'refs/heads/main' }}
       # Optional: Teams is notified only when the secret TEAMS_WEBHOOK_URL is set.
@@ -200,7 +227,7 @@ jobs:
           path: all-blob-reports
           merge-multiple: true
 
-      - name: Merge into one HTML report
+      - name: Merge into one Playwright report
         if: ${{ hashFiles('all-blob-reports/*.zip') != '' }}
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: results.json
@@ -230,14 +257,29 @@ jobs:
           name: k6-summary
           path: k6
 
+      # Site layout: / (landing page), /playwright/, /allure/, /k6/ – each only if it was produced.
+      - name: Assemble the report site
+        if: ${{ env.PUBLISH_REPORT == 'true' }}
+        run: |
+          mkdir -p site
+          cp scripts/report-index.html site/index.html
+          if [ -d playwright-report ]; then cp -r playwright-report site/playwright; fi
+          if [ -d allure-report ]; then cp -r allure-report site/allure; fi
+          if [ -f k6/k6-report.html ]; then mkdir -p site/k6 && cp k6/k6-report.html site/k6/index.html; fi
+          # Drop landing-page links to reports this run did not produce.
+          for report in playwright allure k6; do
+            [ -d "site/$report" ] || perl -0pi -e "s#\s*<a class=\"card\" href=\"$report/\">.*?</a>##s" site/index.html
+          done
+
       - name: Write summary and Teams message
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          REPORT_URL: ${{ env.PUBLISH_REPORT == 'true' && format('https://{0}.github.io/{1}/', github.repository_owner, github.event.repository.name) || '' }}
-          PERF_OUTCOME: ${{ needs.performance.outputs.outcome }}
+          SITE_URL: ${{ format('https://{0}.github.io/{1}/', github.repository_owner, github.event.repository.name) }}
+          JOB_RESULTS: ${{ toJSON(needs) }}
+          K6_EXIT: ${{ needs.performance.outputs.exit-code }}
         run: node scripts/ci-report.mjs
 
-      - name: Upload merged report
+      - name: Upload merged reports
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report
@@ -248,33 +290,29 @@ jobs:
             teams-card.json
           retention-days: 14
 
-      - name: Notify Microsoft Teams
-        if: ${{ env.TEAMS_WEBHOOK_URL != '' }}
-        run: |
-          curl --fail --silent --show-error -H 'Content-Type: application/json' \
-            -d @teams-card.json "$TEAMS_WEBHOOK_URL"
-
-      # Site layout: / (landing page), /playwright/ (native report), /allure/ (Allure report)
-      - name: Assemble the report site
-        if: ${{ env.PUBLISH_REPORT == 'true' && hashFiles('playwright-report/index.html') != '' }}
-        run: |
-          mkdir -p site
-          cp scripts/report-index.html site/index.html
-          cp -r playwright-report site/playwright
-          if [ -d allure-report ]; then cp -r allure-report site/allure; fi
-          if [ -f k6/k6-report.html ]; then mkdir -p site/k6 && cp k6/k6-report.html site/k6/index.html; fi
-
-      - name: Prepare report for GitHub Pages
-        if: ${{ env.PUBLISH_REPORT == 'true' && hashFiles('site/index.html') != '' }}
+      - name: Prepare the site for GitHub Pages
+        if: ${{ env.PUBLISH_REPORT == 'true' }}
         uses: actions/upload-pages-artifact@v5
         with:
           path: site/
 
+      # Last step and non-blocking: a broken webhook must never stop the reports from publishing.
+      - name: Notify Microsoft Teams
+        if: ${{ env.TEAMS_WEBHOOK_URL != '' }}
+        continue-on-error: true
+        run: |
+          curl --fail --silent --show-error -H 'Content-Type: application/json' \
+            -d @teams-card.json "$TEAMS_WEBHOOK_URL"
+
   publish-report:
-    name: Publish report (GitHub Pages)
+    name: Publish reports (GitHub Pages)
     needs: report
     if: ${{ !cancelled() && needs.report.result == 'success' && vars.PUBLISH_REPORT == 'true' && github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    # One deployment at a time; a running deployment is never cancelled halfway.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     permissions:
       pages: write
       id-token: write
