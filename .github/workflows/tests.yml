@@ -1,0 +1,231 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Which tests to run
+        type: choice
+        options: [all, api, gui, performance]
+        default: all
+
+# A newer push to the same branch cancels the run that is still in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: Playwright (api)
+    if: ${{ contains(fromJSON('["", "all", "api"]'), inputs.suite || '') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PLAYWRIGHT_BLOB_OUTPUT_NAME: report-api.zip
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out the MoroSystems todo backend
+        uses: actions/checkout@v4
+        with:
+          repository: morosystems/todo-be
+          path: todo-be
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          npm ci --prefix todo-be
+          npm ci
+
+      # Playwright starts the backend itself (webServer in playwright.config.ts).
+      - name: Run API tests
+        run: npx playwright test --project=api
+
+      - name: Upload blob report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: blob-report-api
+          path: blob-report/
+          retention-days: 1
+
+  gui:
+    name: Playwright (${{ matrix.project }})
+    if: ${{ contains(fromJSON('["", "all", "gui"]'), inputs.suite || '') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { project: chromium, browser: chromium }
+          - { project: firefox, browser: firefox }
+          - { project: webkit, browser: webkit }
+          - { project: mobile, browser: chromium }
+          - { project: tablet, browser: webkit }
+          - { project: visual, browser: chromium }
+    env:
+      PLAYWRIGHT_BLOB_OUTPUT_NAME: report-${{ matrix.project }}.zip
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install ${{ matrix.browser }}
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Run tests
+        run: npx playwright test --project=${{ matrix.project }}
+
+      - name: Upload blob report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: blob-report-${{ matrix.project }}
+          path: blob-report/
+          retention-days: 1
+
+  performance:
+    name: k6 load test
+    if: ${{ contains(fromJSON('["", "all", "performance"]'), inputs.suite || '') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      outcome: ${{ steps.k6.outcome }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: morosystems/todo-be
+          path: todo-be
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Start backend
+        working-directory: todo-be
+        run: |
+          npm ci
+          npm start &
+          npx --yes wait-on http://localhost:8080/tasks/completed
+
+      - uses: grafana/setup-k6-action@v1
+
+      # Thresholds are assumed SLOs that report findings (see FINDINGS.md B7) – they must not
+      # block merges, so a breach is reported in the summary instead of failing the pipeline.
+      - name: Run k6
+        id: k6
+        continue-on-error: true
+        shell: bash
+        run: k6 run --quiet --no-color --summary-export=k6-summary.json perf/tasks-load.k6.js | tee k6-output.txt
+
+      - name: Add k6 results to the job summary
+        if: ${{ !cancelled() }}
+        run: |
+          echo '### k6 load test – ${{ steps.k6.outcome == 'success' && '✅ thresholds met' || '⚠️ thresholds exceeded (FINDINGS.md B7)' }}' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat k6-output.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload k6 summary
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-summary
+          path: |
+            k6-summary.json
+            k6-output.txt
+
+  # Merges the reports of all Playwright jobs, writes the run summary and notifies Teams.
+  report:
+    name: Report
+    needs: [api, gui, performance]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Optional: the report is published to GitHub Pages only when the repository variable
+      # PUBLISH_REPORT is "true" (Settings → Pages → Source: GitHub Actions must be enabled).
+      PUBLISH_REPORT: ${{ vars.PUBLISH_REPORT == 'true' && github.ref == 'refs/heads/main' }}
+      # Optional: Teams is notified only when the secret TEAMS_WEBHOOK_URL is set.
+      TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Download blob reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: blob-report-*
+          path: all-blob-reports
+          merge-multiple: true
+
+      - name: Merge into one HTML report
+        if: ${{ hashFiles('all-blob-reports/*.zip') != '' }}
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: results.json
+          PLAYWRIGHT_JUNIT_OUTPUT_NAME: junit.xml
+        run: npx playwright merge-reports --reporter=html,json,junit ./all-blob-reports
+
+      - name: Write summary and Teams message
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPORT_URL: ${{ env.PUBLISH_REPORT == 'true' && format('https://{0}.github.io/{1}/', github.repository_owner, github.event.repository.name) || '' }}
+          PERF_OUTCOME: ${{ needs.performance.outputs.outcome }}
+        run: node scripts/ci-report.mjs
+
+      - name: Upload merged report
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            junit.xml
+            teams-card.json
+          retention-days: 14
+
+      - name: Notify Microsoft Teams
+        if: ${{ env.TEAMS_WEBHOOK_URL != '' }}
+        run: |
+          curl --fail --silent --show-error -H 'Content-Type: application/json' \
+            -d @teams-card.json "$TEAMS_WEBHOOK_URL"
+
+      - name: Prepare report for GitHub Pages
+        if: ${{ env.PUBLISH_REPORT == 'true' && hashFiles('playwright-report/index.html') != '' }}
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: playwright-report/
+
+  publish-report:
+    name: Publish report (GitHub Pages)
+    needs: report
+    if: ${{ !cancelled() && needs.report.result == 'success' && vars.PUBLISH_REPORT == 'true' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

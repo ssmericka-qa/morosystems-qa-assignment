@@ -1,0 +1,26 @@
+{
+  "name": "morosystems-qa-assignment",
+  "version": "1.0.0",
+  "description": "Automated GUI + API tests for the MoroSystems QA assignment (Playwright + TypeScript, k6)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:api": "playwright test --project=api",
+    "test:gui": "playwright test --project=chromium --project=firefox --project=webkit",
+    "test:responsive": "playwright test --project=mobile --project=tablet",
+    "test:visual": "playwright test --project=visual",
+    "test:visual:update": "playwright test --project=visual --update-snapshots",
+    "report": "playwright show-report",
+    "api:codegen": "openapi-typescript openapi/todo-api.json -o src/api/generated/schema.d.ts",
+    "api:spec:refresh": "curl -sf http://localhost:8080/v3/api-docs -o openapi/todo-api.json && npm run api:codegen",
+    "perf": "k6 run perf/tasks-load.k6.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.58.2",
+    "@types/node": "24.9.1",
+    "openapi-typescript": "7.10.1",
+    "typescript": "5.9.3"
+  }
+}

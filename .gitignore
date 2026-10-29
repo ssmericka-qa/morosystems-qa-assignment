@@ -1,0 +1,10 @@
+node_modules/
+playwright-report/
+test-results/
+blob-report/
+perf/results/
+todo-be/
+results.json
+junit.xml
+teams-card.json
+all-blob-reports/
