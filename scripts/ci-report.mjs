@@ -47,7 +47,6 @@ const ok = total.failed === 0;
 const headline = projects.size
   ? `${ok ? '✅' : '❌'} Playwright: ${total.passed} passed, ${total.failed} failed, ${total.flaky} flaky, ${total.skipped} skipped`
   : 'Playwright: not run';
-const reportLink = REPORT_URL || RUN_URL;
 
 // GitHub job summary (Markdown on the run page)
 const summary = [
@@ -59,7 +58,9 @@ const summary = [
   '',
   `**k6 load test:** ${perf}`,
   '',
-  REPORT_URL ? `📊 [HTML report](${REPORT_URL})` : '📊 HTML report: artifact `playwright-report` below',
+  REPORT_URL
+    ? `📊 [Playwright report](${REPORT_URL}playwright/) · [Allure report](${REPORT_URL}allure/)`
+    : '📊 Reports: artifact `playwright-report` below (Playwright and Allure)',
   ...(failures.length ? ['', '### Failed tests', ...failures.map((f) => `- ${f}`)] : []),
 ].join('\n');
 
@@ -98,7 +99,12 @@ const card = {
       : []),
   ],
   actions: [
-    ...(reportLink ? [{ type: 'Action.OpenUrl', title: 'Open report', url: reportLink }] : []),
+    ...(REPORT_URL
+      ? [
+          { type: 'Action.OpenUrl', title: 'Playwright report', url: `${REPORT_URL}playwright/` },
+          { type: 'Action.OpenUrl', title: 'Allure report', url: `${REPORT_URL}allure/` },
+        ]
+      : []),
     ...(RUN_URL ? [{ type: 'Action.OpenUrl', title: 'Open pipeline run', url: RUN_URL }] : []),
   ],
 };

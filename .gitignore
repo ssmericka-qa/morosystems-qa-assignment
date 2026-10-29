@@ -8,3 +8,6 @@ results.json
 junit.xml
 teams-card.json
 all-blob-reports/
+allure-results/
+allure-report/
+site/

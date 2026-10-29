@@ -55,6 +55,14 @@ jobs:
           path: blob-report/
           retention-days: 1
 
+      - name: Upload Allure results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: allure-results-api
+          path: allure-results/
+          retention-days: 1
+
   gui:
     name: Playwright (${{ matrix.project }})
     if: ${{ contains(fromJSON('["", "all", "gui"]'), inputs.suite || '') }}
@@ -94,6 +102,14 @@ jobs:
         with:
           name: blob-report-${{ matrix.project }}
           path: blob-report/
+          retention-days: 1
+
+      - name: Upload Allure results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: allure-results-${{ matrix.project }}
+          path: allure-results/
           retention-days: 1
 
   performance:
@@ -186,6 +202,17 @@ jobs:
           PLAYWRIGHT_JUNIT_OUTPUT_NAME: junit.xml
         run: npx playwright merge-reports --reporter=html,json,junit ./all-blob-reports
 
+      - name: Download Allure results
+        uses: actions/download-artifact@v8
+        with:
+          pattern: allure-results-*
+          path: allure-results
+          merge-multiple: true
+
+      - name: Generate Allure report
+        if: ${{ hashFiles('allure-results/*.json') != '' }}
+        run: npx allure generate allure-results --name "MoroSystems QA assignment" --output allure-report
+
       - name: Write summary and Teams message
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -199,6 +226,7 @@ jobs:
           name: playwright-report
           path: |
             playwright-report/
+            allure-report/
             junit.xml
             teams-card.json
           retention-days: 14
@@ -209,11 +237,20 @@ jobs:
           curl --fail --silent --show-error -H 'Content-Type: application/json' \
             -d @teams-card.json "$TEAMS_WEBHOOK_URL"
 
-      - name: Prepare report for GitHub Pages
+      # Site layout: / (landing page), /playwright/ (native report), /allure/ (Allure report)
+      - name: Assemble the report site
         if: ${{ env.PUBLISH_REPORT == 'true' && hashFiles('playwright-report/index.html') != '' }}
+        run: |
+          mkdir -p site
+          cp scripts/report-index.html site/index.html
+          cp -r playwright-report site/playwright
+          if [ -d allure-report ]; then cp -r allure-report site/allure; fi
+
+      - name: Prepare report for GitHub Pages
+        if: ${{ env.PUBLISH_REPORT == 'true' && hashFiles('site/index.html') != '' }}
         uses: actions/upload-pages-artifact@v5
         with:
-          path: playwright-report/
+          path: site/
 
   publish-report:
     name: Publish report (GitHub Pages)

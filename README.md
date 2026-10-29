@@ -16,7 +16,7 @@ visual regression, cross-browser / responsive runs and a GitHub Actions pipeline
 | **Visual** | Baseline screenshots of the intro block (header + hero) of the homepage and Kariéra | `tests/visual/` |
 | **Performance** | k6 load test with thresholds per endpoint (assumed – the assignment gives no SLOs) | `perf/tasks-load.k6.js` |
 | **OpenAPI codegen** | TypeScript types generated from the backend's `/v3/api-docs`, used by a thin hand-written connector | `src/api/` |
-| **CI/CD** | GitHub Actions: parallel matrix per project, one merged HTML report (optionally on GitHub Pages), run summary, optional Microsoft Teams notification | `.github/workflows/tests.yml`, [CI pipeline](#ci-pipeline) |
+| **CI/CD** | GitHub Actions: parallel matrix per project, one merged Playwright report + Allure report (optionally on GitHub Pages), run summary, optional Microsoft Teams notification | `.github/workflows/tests.yml`, [CI pipeline](#ci-pipeline) |
 
 Found issues are listed in **[FINDINGS.md](FINDINGS.md)**, the test approach in **[TEST_PLAN.md](TEST_PLAN.md)**.
 
@@ -71,6 +71,9 @@ Every local run produces an HTML report (`playwright-report/`) with per-step res
 JUnit XML (`test-results/junit.xml`); in CI the reports are merged across jobs (see [CI pipeline](#ci-pipeline)). On failure, Playwright keeps a **screenshot, video and
 trace** (`npx playwright show-trace <trace.zip>` shows DOM snapshots, network and console logs).
 Findings and warnings are attached to tests as **annotations** and visible in the report.
+Every run also writes Allure results (`allure-results/`); `npm run report:allure` builds and opens
+the **Allure report** – both reports come from the same run, the native one for debugging
+(trace viewer), Allure for an overview.
 
 ## CI pipeline
 
@@ -82,15 +85,16 @@ Findings and warnings are attached to tests as **annotations** and visible in th
 | **api** | Checks out `morosystems/todo-be`, Playwright starts it and runs the API tests |
 | **gui** | Matrix of 6 parallel jobs – chromium, firefox, webkit, mobile, tablet, visual; each installs only its browser |
 | **performance** | Starts the backend and runs k6. A threshold breach is reported, not blocking (FINDINGS B7) |
-| **report** | Merges the reports of all Playwright jobs into **one HTML report**, writes the run summary and notifies Teams |
-| **publish-report** | Publishes the HTML report to GitHub Pages (optional) |
+| **report** | Merges the reports of all Playwright jobs into **one Playwright report** and **one Allure report**, writes the run summary and notifies Teams |
+| **publish-report** | Publishes both reports to GitHub Pages (optional) – landing page, `/playwright/`, `/allure/` |
 
 What you get from one run:
 
 - **Run summary** on the run page – passed / failed / flaky / skipped per project, k6 result,
   list of failed tests.
 - **Annotations** – a failing test is shown directly at the line of code (`github` reporter).
-- **Merged HTML report** with screenshots, videos and traces – artifact `playwright-report`
+- **Merged Playwright report** with screenshots, videos and traces, and an **Allure report**
+  (overview with charts, suites, timeline of the parallel run) – artifact `playwright-report`
   (also contains `junit.xml`).
 - **Microsoft Teams message** (Adaptive Card) with the same summary and links to the report and run.
 
@@ -99,7 +103,7 @@ Optional features stay off until configured, so the pipeline also works in a fre
 | Feature | How to enable |
 | --- | --- |
 | Teams notification | Secret `TEAMS_WEBHOOK_URL` – the URL of a Teams incoming webhook / Workflows "When a Teams webhook request is received". Without it the step is skipped; the generated message is still in the artifact (`teams-card.json`, previewable in the [Adaptive Cards Designer](https://adaptivecards.io/designer/)). |
-| HTML report on GitHub Pages | Settings → Pages → Source: **GitHub Actions**, then repository variable `PUBLISH_REPORT=true`. Published from `main` only. |
+| Reports on GitHub Pages | Settings → Pages → Source: **GitHub Actions**, then repository variable `PUBLISH_REPORT=true`. Published from `main` only. |
 
 In a real project I would add a nightly scheduled run and send Teams messages only on failure –
 here the tests run against a production website, so the pipeline runs only on demand and on push.
