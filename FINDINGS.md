@@ -7,9 +7,9 @@ consumer point of view.
 
 | Type | Count | Items |
 | --- | --- | --- |
-| **Defect** – the system behaves incorrectly or its documentation is wrong | 4 | B2, B3, B4, B9 |
+| **Defect** – the system differs from the requirement, behaves incorrectly or its documentation is wrong | 5 | B1, B2, B3, B4, B9 |
 | **UX issue** – works, but the user experience should be improved | 1 | W1 |
-| **Observation** – not a defect; intentional behaviour, spec mismatch, risk or note for the team | 7 | B1, B5, B6, B7, B8, W2, W3 |
+| **Observation** – not a defect; intentional behaviour, risk or note for the team | 6 | B5, B6, B7, B8, W2, W3 |
 
 B2–B4, B8 and B9 are covered by API tests (`tests/api/tasks-validation.spec.ts`), B6 and B7 by
 the k6 load test.
@@ -20,7 +20,7 @@ comes from a code review of the backend source done as the last step (behaviour 
 
 | # | Type | Finding | Severity | Evidence |
 | --- | --- | --- | --- | --- |
-| B1 | Observation | **No PUT endpoint.** The assignment asks for a PUT update, the API updates via `POST /tasks/{id}`. `PUT` returns `404 Cannot PUT`; CORS also allows only `GET, POST, DELETE`. A mismatch between the assignment and the API, not a defect of the application. | Info | `tasks-crud.spec.ts` → "step 4: PUT …" |
+| B1 | Defect (requirement mismatch) | **No PUT endpoint.** The requirement (assignment step 4) is to update a task with `PUT`; the API updates via `POST /tasks/{id}` and `PUT` returns `404 Cannot PUT` (CORS also allows only `GET, POST, DELETE`). The backend's own Swagger documents the POST, so code and API docs agree with each other but not with the requirement – a client built from the requirement cannot update tasks. Fix either the API (add PUT) or the requirement; the decision belongs to the product owner. | Medium | `tasks-crud.spec.ts` → "step 4: PUT …" |
 | B2 | Defect (docs) | **Swagger vs. implementation – unknown id.** Swagger documents `400` for an unknown task id on delete, complete and incomplete, and no not-found response on update; the backend returns `404` for all four. `404` is the better choice – the documentation should be fixed. | Low | `tasks-validation.spec.ts` → "unknown id returns 404 …" |
 | B3 | Defect | **Whitespace-only text is accepted.** `{"text":"   "}` creates a task; validation only checks truthiness. | Medium | `tasks-validation.spec.ts` → "KNOWN BUG … B3" |
 | B4 | Defect | **No type validation.** `{"text": 12345}` is stored as a task text (number instead of string). | Medium | `tasks-validation.spec.ts` → "KNOWN BUG … B4" |

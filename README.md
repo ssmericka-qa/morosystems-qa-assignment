@@ -11,7 +11,7 @@ visual regression, cross-browser / responsive runs and a GitHub Actions pipeline
 | --- | --- | --- |
 | **GUI** | Assignment scenario: steps 1–5 (Google → MoroSystems, result link validation) and steps 6–7 (Kariéra → city filter) | `tests/gui/google-to-career.spec.ts` |
 | **GUI** | City filter checked for every city against the page's own data | `tests/gui/career-filter.spec.ts` |
-| **API** | Steps 2–5: GET, POST, update (the API has no PUT – it updates via `POST /tasks/{id}`, see FINDINGS B1), DELETE; complete / incomplete; status, data and persistence checks | `tests/api/tasks-crud.spec.ts` |
+| **API** | Steps 2–5: GET, POST, update (the assignment requires PUT, the API offers only `POST /tasks/{id}` – defect B1), DELETE; complete / incomplete; status, data and persistence checks | `tests/api/tasks-crud.spec.ts` |
 | **API** | Validation, error handling, server-owned fields, retried POST, known bugs pinned by characterization tests | `tests/api/tasks-validation.spec.ts` |
 | **Cross-browser** | Chromium, Firefox, WebKit (Safari); branded Chrome / Edge via `PW_CHANNEL` | `playwright.config.ts` |
 | **Responsive** | Pixel 7 and iPad: no horizontal overflow, navigation via burger menu, filter usable | `tests/responsive/` |

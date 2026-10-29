@@ -48,10 +48,10 @@ test.describe('Todo API – task lifecycle', () => {
     expect(await api.findTask(task.id), 'the change is persisted').toEqual(updated);
   });
 
-  test('step 4: PUT /tasks/{id} as written in the assignment is not offered (FINDINGS B1)', async ({ request, api, task }) => {
+  test('step 4: PUT /tasks/{id} required by the assignment – KNOWN BUG B1: returns 404 instead of updating', async ({ request, api, task }) => {
     test.info().annotations.push({
       type: 'finding',
-      description: 'B1: the backend has no PUT; updates use POST /tasks/{id}. CORS also allows only GET, POST, DELETE.',
+      description: 'B1: the assignment requires PUT, the backend has none (404); updates work only via POST /tasks/{id}. CORS also allows only GET, POST, DELETE.',
     });
 
     // Sent directly, not through the connector – the connector describes only endpoints that exist.
