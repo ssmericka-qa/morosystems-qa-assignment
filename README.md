@@ -2,6 +2,8 @@
 
 ![tests](https://github.com/ssmericka-qa/morosystems-qa-assignment/actions/workflows/tests.yml/badge.svg)
 
+📊 **Test reports of the latest CI run:** [Playwright](https://ssmericka-qa.github.io/morosystems-qa-assignment/playwright/) · [Allure](https://ssmericka-qa.github.io/morosystems-qa-assignment/allure/) · [k6](https://ssmericka-qa.github.io/morosystems-qa-assignment/k6/)
+
 Automated GUI and API tests for the MoroSystems QA assignment, plus a k6 load test,
 visual regression, cross-browser / responsive runs and a GitHub Actions pipeline.
 
