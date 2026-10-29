@@ -59,7 +59,7 @@ const summary = [
   `**k6 load test:** ${perf}`,
   '',
   REPORT_URL
-    ? `📊 [Playwright report](${REPORT_URL}playwright/) · [Allure report](${REPORT_URL}allure/)`
+    ? `📊 [Playwright report](${REPORT_URL}playwright/) · [Allure report](${REPORT_URL}allure/) · [k6 report](${REPORT_URL}k6/)`
     : '📊 Reports: artifact `playwright-report` below (Playwright and Allure)',
   ...(failures.length ? ['', '### Failed tests', ...failures.map((f) => `- ${f}`)] : []),
 ].join('\n');
@@ -103,6 +103,7 @@ const card = {
       ? [
           { type: 'Action.OpenUrl', title: 'Playwright report', url: `${REPORT_URL}playwright/` },
           { type: 'Action.OpenUrl', title: 'Allure report', url: `${REPORT_URL}allure/` },
+          { type: 'Action.OpenUrl', title: 'k6 report', url: `${REPORT_URL}k6/` },
         ]
       : []),
     ...(RUN_URL ? [{ type: 'Action.OpenUrl', title: 'Open pipeline run', url: RUN_URL }] : []),

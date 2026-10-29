@@ -146,6 +146,10 @@ jobs:
         id: k6
         continue-on-error: true
         shell: bash
+        env:
+          # Built-in k6 web dashboard, exported as a standalone HTML report with charts
+          K6_WEB_DASHBOARD: 'true'
+          K6_WEB_DASHBOARD_EXPORT: k6-report.html
         run: k6 run --quiet --no-color --summary-export=k6-summary.json perf/tasks-load.k6.js | tee k6-output.txt
 
       - name: Add k6 results to the job summary
@@ -164,6 +168,7 @@ jobs:
           path: |
             k6-summary.json
             k6-output.txt
+            k6-report.html
 
   # Merges the reports of all Playwright jobs, writes the run summary and notifies Teams.
   report:
@@ -218,6 +223,13 @@ jobs:
           perl -0pi -e 's#\s*<script async src="https://www\.googletagmanager\.com/[^"]*"></script>\s*<script>\s*window\.dataLayer.*?</script>##s' allure-report/index.html
           ! grep -q googletagmanager allure-report/index.html
 
+      - name: Download k6 results
+        if: ${{ needs.performance.result == 'success' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: k6-summary
+          path: k6
+
       - name: Write summary and Teams message
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -250,6 +262,7 @@ jobs:
           cp scripts/report-index.html site/index.html
           cp -r playwright-report site/playwright
           if [ -d allure-report ]; then cp -r allure-report site/allure; fi
+          if [ -f k6/k6-report.html ]; then mkdir -p site/k6 && cp k6/k6-report.html site/k6/index.html; fi
 
       - name: Prepare report for GitHub Pages
         if: ${{ env.PUBLISH_REPORT == 'true' && hashFiles('site/index.html') != '' }}

@@ -84,9 +84,9 @@ the **Allure report** – both reports come from the same run, the native one fo
 | --- | --- |
 | **api** | Checks out `morosystems/todo-be`, Playwright starts it and runs the API tests |
 | **gui** | Matrix of 6 parallel jobs – chromium, firefox, webkit, mobile, tablet, visual; each installs only its browser |
-| **performance** | Starts the backend and runs k6. A threshold breach is reported, not blocking (FINDINGS B7) |
+| **performance** | Starts the backend and runs k6 (HTML report from the k6 web dashboard). A threshold breach is reported, not blocking (FINDINGS B7) |
 | **report** | Merges the reports of all Playwright jobs into **one Playwright report** and **one Allure report**, writes the run summary and notifies Teams |
-| **publish-report** | Publishes both reports to GitHub Pages (optional) – landing page, `/playwright/`, `/allure/` |
+| **publish-report** | Publishes both reports to GitHub Pages (optional) – landing page, `/playwright/`, `/allure/`, `/k6/` |
 
 What you get from one run:
 
