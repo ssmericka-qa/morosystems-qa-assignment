@@ -69,14 +69,6 @@ jobs:
           path: blob-report/
           retention-days: 1
 
-      - name: Upload Allure results
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: allure-results-api
-          path: allure-results/
-          retention-days: 1
-
   gui:
     name: Playwright (${{ matrix.project }})
     if: ${{ contains(fromJSON('["", "all", "gui"]'), inputs.suite || '') }}
@@ -116,14 +108,6 @@ jobs:
         with:
           name: blob-report-${{ matrix.project }}
           path: blob-report/
-          retention-days: 1
-
-      - name: Upload Allure results
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: allure-results-${{ matrix.project }}
-          path: allure-results/
           retention-days: 1
 
   performance:
@@ -200,8 +184,7 @@ jobs:
             k6-output.txt
             k6-report.html
 
-  # Merges the reports of all jobs, writes the run summary, prepares the GitHub Pages site and
-  # notifies Teams.
+  # Merges the reports of all jobs, writes the run summary and prepares the GitHub Pages site.
   report:
     name: Report
     needs: [api, gui, performance]
@@ -212,8 +195,6 @@ jobs:
       # Optional: the reports are published to GitHub Pages only when the repository variable
       # PUBLISH_REPORT is "true" (Settings → Pages → Source: GitHub Actions must be enabled).
       PUBLISH_REPORT: ${{ vars.PUBLISH_REPORT == 'true' && github.ref == 'refs/heads/main' }}
-      # Optional: Teams is notified only when the secret TEAMS_WEBHOOK_URL is set.
-      TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
     steps:
       - uses: actions/checkout@v7
 
@@ -238,22 +219,6 @@ jobs:
           PLAYWRIGHT_JUNIT_OUTPUT_NAME: junit.xml
         run: npx playwright merge-reports --reporter=html,json,junit ./all-blob-reports
 
-      - name: Download Allure results
-        uses: actions/download-artifact@v8
-        with:
-          pattern: allure-results-*
-          path: allure-results
-          merge-multiple: true
-
-      - name: Generate Allure report
-        if: ${{ hashFiles('allure-results/*.json') != '' }}
-        # Allure 3 embeds Google Analytics in the report and offers no switch for it –
-        # the public report must not track its visitors, so the snippet is removed.
-        run: |
-          npx allure generate allure-results
-          perl -0pi -e 's#\s*<script async src="https://www\.googletagmanager\.com/[^"]*"></script>\s*<script>\s*window\.dataLayer.*?</script>##s' allure-report/index.html
-          ! grep -q googletagmanager allure-report/index.html
-
       - name: Download k6 results
         if: ${{ needs.performance.result == 'success' }}
         uses: actions/download-artifact@v8
@@ -261,23 +226,21 @@ jobs:
           name: k6-summary
           path: k6
 
-      # Site layout: / (landing page), /playwright/, /allure/, /k6/ – each only if it was produced.
+      # Site layout: / (landing page), /playwright/, /k6/ – each only if it was produced.
       - name: Assemble the report site
         if: ${{ env.PUBLISH_REPORT == 'true' }}
         run: |
           mkdir -p site
           cp scripts/report-index.html site/index.html
           if [ -d playwright-report ]; then cp -r playwright-report site/playwright; fi
-          if [ -d allure-report ]; then cp -r allure-report site/allure; fi
           if [ -f k6/k6-report.html ]; then mkdir -p site/k6 && cp k6/k6-report.html site/k6/index.html; fi
           # Drop landing-page links to reports this run did not produce.
-          for report in playwright allure k6; do
+          for report in playwright k6; do
             [ -d "site/$report" ] || perl -0pi -e "s#\s*<a class=\"card\" href=\"$report/\">.*?</a>##s" site/index.html
           done
 
-      - name: Write summary and Teams message
+      - name: Write the run summary
         env:
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           SITE_URL: ${{ format('https://{0}.github.io/{1}/', github.repository_owner, github.event.repository.name) }}
           JOB_RESULTS: ${{ toJSON(needs) }}
           K6_EXIT: ${{ needs.performance.outputs.exit-code }}
@@ -289,9 +252,7 @@ jobs:
           name: playwright-report
           path: |
             playwright-report/
-            allure-report/
             junit.xml
-            teams-card.json
           retention-days: 14
 
       - name: Prepare the site for GitHub Pages
@@ -299,14 +260,6 @@ jobs:
         uses: actions/upload-pages-artifact@v5
         with:
           path: site/
-
-      # Last step and non-blocking: a broken webhook must never stop the reports from publishing.
-      - name: Notify Microsoft Teams
-        if: ${{ env.TEAMS_WEBHOOK_URL != '' }}
-        continue-on-error: true
-        run: |
-          curl --fail --silent --show-error -H 'Content-Type: application/json' \
-            -d @teams-card.json "$TEAMS_WEBHOOK_URL"
 
   publish-report:
     name: Publish reports (GitHub Pages)

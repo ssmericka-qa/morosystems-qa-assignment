@@ -2,7 +2,7 @@
 
 ![tests](https://github.com/ssmericka-qa/morosystems-qa-assignment/actions/workflows/tests.yml/badge.svg)
 
-📊 **Test reports of the latest CI run:** [Playwright](https://ssmericka-qa.github.io/morosystems-qa-assignment/playwright/) · [Allure](https://ssmericka-qa.github.io/morosystems-qa-assignment/allure/) · [k6](https://ssmericka-qa.github.io/morosystems-qa-assignment/k6/)
+📊 **Test reports of the latest CI run:** [Playwright](https://ssmericka-qa.github.io/morosystems-qa-assignment/playwright/) · [k6](https://ssmericka-qa.github.io/morosystems-qa-assignment/k6/)
 
 Automated GUI and API tests for the MoroSystems QA assignment, plus a k6 load test,
 visual regression, cross-browser / responsive runs and a GitHub Actions pipeline.
@@ -18,7 +18,7 @@ visual regression, cross-browser / responsive runs and a GitHub Actions pipeline
 | **Visual** | Baseline screenshots of the intro block (header + hero) of the homepage and Kariéra | `tests/visual/` |
 | **Performance** | k6 load test: thresholds per endpoint (assumed – no SLOs were given) and a data reconciliation after the load | `perf/tasks-load.k6.js` |
 | **OpenAPI codegen** | TypeScript types generated from the backend's `/v3/api-docs`, used by a thin hand-written connector | `src/api/` |
-| **CI/CD** | GitHub Actions: parallel jobs, merged Playwright, Allure and k6 reports on GitHub Pages, run summary, optional Teams notification | [CI pipeline](#ci-pipeline) |
+| **CI/CD** | GitHub Actions: parallel jobs, merged Playwright report and k6 report on GitHub Pages, run summary | [CI pipeline](#ci-pipeline) |
 
 Found issues are listed in **[FINDINGS.md](FINDINGS.md)**, the test approach in **[TEST_PLAN.md](TEST_PLAN.md)**.
 
@@ -50,7 +50,7 @@ npm run test:gui            # GUI tests in Chromium, Firefox and WebKit
 npm run test:responsive     # mobile + tablet
 npm run test:visual         # visual regression
 npm run report              # Playwright HTML report (steps, screenshots, traces)
-npm run report:allure       # Allure report of the last run
+npm run report:allure       # optional: Allure report of the last local run
 
 npx playwright test --project=chromium --headed             # watch a run
 SLOWMO=500 npx playwright test --project=chromium --headed  # watch it slowed down
@@ -65,8 +65,7 @@ npm run typecheck
 ```
 
 On failure Playwright keeps a **screenshot, video and trace**; findings are attached to tests as
-**annotations** and visible in both reports. The Playwright report is for debugging (trace
-viewer), Allure for an overview – both come from the same run.
+**annotations** and visible in the report.
 
 ## CI pipeline
 
@@ -75,23 +74,18 @@ viewer), Allure for an overview – both come from the same run.
 
 - **api**, **gui** (6 parallel jobs: chromium, firefox, webkit, mobile, tablet, visual) and
   **performance** (k6) run in parallel; the backend is checked out at a pinned commit.
-- **report** merges the results of all jobs into one Playwright report, one Allure report and
-  `junit.xml`, and writes the **run summary** (per project, k6 result, failed and skipped tests,
+- **report** merges the results of all jobs into one Playwright report and `junit.xml`, and writes the **run summary** (per project, k6 result, failed and skipped tests,
   projects whose job crashed before reporting). Failing tests are also shown directly at the line
   of code.
 - **publish-report** publishes the reports from `main` to
   [GitHub Pages](https://ssmericka-qa.github.io/morosystems-qa-assignment/).
 - A k6 threshold breach is reported, not blocking – the thresholds are assumptions, not agreed SLOs.
 
-Optional, off until configured (the pipeline works without them in a fresh fork):
+Publishing to GitHub Pages is optional (Settings → Pages → Source: **GitHub Actions**, then
+repository variable `PUBLISH_REPORT=true`); without it the reports are run artifacts.
 
-| Feature | How to enable |
-| --- | --- |
-| Teams notification | Secret `TEAMS_WEBHOOK_URL` (Teams incoming webhook / Workflows). Without it the step is skipped; the message is still in the artifact (`teams-card.json`, previewable in the [Adaptive Cards Designer](https://adaptivecards.io/designer/)). |
-| Reports on GitHub Pages | Settings → Pages → Source: **GitHub Actions**, then repository variable `PUBLISH_REPORT=true`. |
-
-In a real project I would add a nightly run and send Teams messages only on failure – here the
-tests hit a production website, so the pipeline runs only on push and on demand.
+In a real project I would add a nightly run and send a Microsoft Teams message on failure – here
+the tests hit a production website, so the pipeline runs only on push and on demand.
 
 ## Design decisions
 
@@ -163,6 +157,6 @@ tests/
   responsive/   Mobile / tablet checks
   visual/       Visual regression + baselines
 perf/           k6 load test
-scripts/        CI run summary + Teams message, landing page of the published reports
+scripts/        CI run summary, landing page of the published reports
 openapi/        Backend OpenAPI spec used for codegen
 ```

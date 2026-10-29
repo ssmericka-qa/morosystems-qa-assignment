@@ -1,20 +1,14 @@
-// Turns the merged Playwright JSON report, the job results and the k6 exit code into a GitHub
-// job summary and a Microsoft Teams message (Adaptive Card). Used by the "report" job in
-// .github/workflows/tests.yml.
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+// Turns the merged Playwright JSON report, the job results and the k6 exit code into the GitHub
+// job summary of the run. Used by the "report" job in .github/workflows/tests.yml.
+import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 
 const {
   RESULTS_JSON = 'results.json',
-  TEAMS_CARD = 'teams-card.json',
   SITE_DIR = 'site',
   SITE_URL = '',
-  RUN_URL = '',
   JOB_RESULTS = '{}',
   K6_EXIT = '',
   GITHUB_STEP_SUMMARY,
-  GITHUB_REPOSITORY = 'local',
-  GITHUB_REF_NAME = 'local',
-  GITHUB_SHA = '',
 } = process.env;
 
 const STATUS = { expected: 'passed', unexpected: 'failed', flaky: 'flaky', skipped: 'skipped' };
@@ -69,7 +63,6 @@ const headline = projects.size || brokenJobs.length
 // Links only to reports this run actually published.
 const REPORTS = [
   ['Playwright report', 'playwright'],
-  ['Allure report', 'allure'],
   ['k6 report', 'k6'],
 ];
 const links = SITE_URL
@@ -88,7 +81,7 @@ const summary = [
   '',
   links.length
     ? `📊 ${links.map(({ title, url }) => `[${title}](${url})`).join(' · ')}`
-    : '📊 Reports: artifact `playwright-report` below (Playwright and Allure)',
+    : '📊 Reports: artifact `playwright-report` below',
   ...(brokenJobs.length ? ['', '### Projects without results (their job failed before reporting)', ...brokenJobs.map((j) => `- ${j}`)] : []),
   ...(failures.length ? ['', '### Failed tests', ...failures.map((f) => `- ${f}`)] : []),
   ...(skipped.length ? ['', '### Skipped tests', ...skipped.map((s) => `- ${s}`)] : []),
@@ -96,49 +89,3 @@ const summary = [
 
 if (GITHUB_STEP_SUMMARY) appendFileSync(GITHUB_STEP_SUMMARY, `${summary}\n`);
 else console.log(summary);
-
-// Teams message – the Adaptive Card format accepted by Teams incoming webhooks and Workflows
-const MAX_ITEMS = 10;
-const list = (items) =>
-  items.slice(0, MAX_ITEMS).map((i) => `- ${i}`).join('\n') +
-  (items.length > MAX_ITEMS ? `\n- … and ${items.length - MAX_ITEMS} more` : '');
-const problems = [...brokenJobs.map((j) => `no results: ${j}`), ...failures];
-
-const card = {
-  type: 'AdaptiveCard',
-  $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
-  version: '1.4',
-  body: [
-    { type: 'TextBlock', size: 'Large', weight: 'Bolder', wrap: true, color: ok ? 'Good' : 'Attention', text: headline },
-    { type: 'TextBlock', isSubtle: true, spacing: 'None', wrap: true, text: `${GITHUB_REPOSITORY} · ${GITHUB_REF_NAME} · ${GITHUB_SHA.slice(0, 7)}` },
-    {
-      type: 'FactSet',
-      facts: [
-        ...[...projects].map(([name, c]) => ({
-          title: name,
-          value: `${c.passed} ✅  ${c.failed} ❌  ${c.flaky} 🔁  ${c.skipped} ⏭`,
-        })),
-        { title: 'k6', value: perf },
-      ],
-    },
-    ...(problems.length
-      ? [
-          { type: 'TextBlock', weight: 'Bolder', text: 'Failed', spacing: 'Medium' },
-          { type: 'TextBlock', wrap: true, text: list(problems) },
-        ]
-      : []),
-  ],
-  actions: [
-    ...links.map(({ title, url }) => ({ type: 'Action.OpenUrl', title, url })),
-    ...(RUN_URL ? [{ type: 'Action.OpenUrl', title: 'Open pipeline run', url: RUN_URL }] : []),
-  ],
-};
-
-writeFileSync(
-  TEAMS_CARD,
-  JSON.stringify(
-    { type: 'message', attachments: [{ contentType: 'application/vnd.microsoft.card.adaptive', content: card }] },
-    null,
-    2,
-  ),
-);

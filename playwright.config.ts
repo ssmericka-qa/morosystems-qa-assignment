@@ -21,9 +21,9 @@ export default defineConfig({
 
   // CI: each job writes a blob report; the "report" job merges them into one HTML report.
   // The github reporter shows failures as annotations directly in the code view.
-  // Allure results are written everywhere – `npm run report:allure` builds the Allure report.
+  // Locally Allure results are written too – `npm run report:allure` builds the Allure report.
   reporter: isCI
-    ? [['list'], ['github'], ['blob'], ['allure-playwright']]
+    ? [['list'], ['github'], ['blob']]
     : [
         ['list'],
         ['html', { open: 'never' }],
